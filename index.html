@@ -408,6 +408,19 @@
                 <label class="text-[#9CA3AF] text-sm font-semibold block mb-2">Sort By:</label>
                 <div id="anime-sort-filters" class="flex gap-2 sort-scroll-container scrollbar-hide"></div>
             </div>
+
+            <!-- Filter Dropdowns Container -->
+            <div class="flex flex-col sm:flex-row gap-4 mb-6">
+                <!-- Genre Filter Dropdown Group -->
+                <div class="w-full sm:w-1/2">
+                    <label class="text-[#9CA3AF] text-sm font-semibold block mb-2">Filter by Genre:</label>
+                    <select id="anime-genre-dropdown" class="w-full bg-[#1F2937] text-[#F9FAFB] rounded-lg p-2.5 focus:ring-[#E50914] focus:border-[#E50914] border border-[#374151] appearance-none cursor-pointer" onchange="changeGenre('anime', this.value)">
+                        <!-- Options will be dynamically populated here -->
+                        <option id="anime-genre-filters">All Genres</option>
+                    </select>
+                </div>
+            </div>
+
             <div id="anime-container" class="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6"></div>
             <div id="anime-pagination" class="mt-6 flex justify-center"></div>
         </section>
@@ -565,12 +578,26 @@
                 const posterWrapper = document.createElement('div');
                 const imageWidth = isLargeRow ? '160px' : '128px'; // Adjusted width for normal rows
     
-                posterWrapper.className = 'flex-shrink-0 mr-3 text-center cursor-pointer group transition-transform duration-300 hover:scale-105 md:hover:scale-105 shadow-xl';
+                posterWrapper.className = 'relative flex-shrink-0 mr-3 text-center cursor-pointer group transition-transform duration-300 hover:scale-105 md:hover:scale-105 shadow-xl'; // Added relative
     
                 posterWrapper.style.width = imageWidth;
                 posterWrapper.dataset.id = movie.id;
                 posterWrapper.dataset.type = movie.media_type || (isLargeRow ? 'tv' : 'movie');
                 posterWrapper.addEventListener('click', () => showDetails(posterWrapper.dataset.id, posterWrapper.dataset.type));
+
+                // Add rating badge
+                const rating = movie.vote_average ? movie.vote_average.toFixed(1) : null;
+                const ratingBadge = document.createElement('div');
+                if (rating && rating > 0) {
+                    /* Updated rating badge styles */
+                    ratingBadge.className = 'absolute top-2 right-2 bg-[#E50914] text-white text-xs font-bold px-2 py-1 rounded-full z-10 shadow-md';
+                    ratingBadge.innerHTML = `★ ${rating}`;
+                } else {
+                    /* No rating badge styles */
+                    ratingBadge.className = 'absolute top-2 right-2 bg-[#374151] text-white text-xs font-bold px-2 py-1 rounded-full z-10 shadow-md';
+                    ratingBadge.innerHTML = 'NR';
+                }
+                posterWrapper.appendChild(ratingBadge);
 
                 const poster = document.createElement('img');
                 poster.src = `${IMAGE_BASE_URL}${imagePath}`;
@@ -645,14 +672,24 @@
                 const posterPath = item.poster_path;
                 const fullPosterUrl = posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : 'https://placehold.co/500x750/1F2937/F9FAFB?text=Poster+Unavailable';
                 const cardMediaType = item.media_type || (mediaType === 'movie' ? 'movie' : 'tv');
+                const rating = item.vote_average ? item.vote_average.toFixed(1) : null;
+
+                /* Updated rating badge styles */
+                let ratingBadgeHtml;
+                if (rating && rating > 0) {
+                    ratingBadgeHtml = `<div class="absolute top-2 right-2 bg-[#E50914] text-white text-xs font-bold px-2 py-1 rounded-full z-10 shadow-md">★ ${rating}</div>`;
+                } else {
+                    ratingBadgeHtml = `<div class="absolute top-2 right-2 bg-[#374151] text-white text-xs font-bold px-2 py-1 rounded-full z-10 shadow-md">NR</div>`;
+                }
 
                 const cardHtml = `
                     <div
-                        class="poster-card bg-[#1F2937] rounded-xl overflow-hidden shadow-xl"
+                        class="relative poster-card bg-[#1F2937] rounded-xl overflow-hidden shadow-xl"
                         data-id="${item.id}"
                         data-type="${cardMediaType}"
                         onclick="showDetails(this.dataset.id, this.dataset.type)"
                     >
+                        ${ratingBadgeHtml}
                         <div class="aspect-[2/3] overflow-hidden">
                             <img src="${fullPosterUrl}" alt="${title} poster" class="w-full h-full object-cover" onerror="this.onerror=null; this.src='https://placehold.co/500x750/1F2937/F9FAFB?text=Poster+Unavailable';" loading="lazy">
                         </div>
@@ -839,8 +876,23 @@
                     if (mediaType === 'movie') queryParams += `&primary_release_date.lte=${today}`;
                     else if (mediaType === 'tv' || mediaType === 'korean-tv' || mediaType === 'anime') queryParams += `&first_air_date.lte=${today}`;
                 }
-                if (filter.genreId) queryParams += `&with_genres=${filter.genreId}`;
-                if (filter.countryCode) queryParams += `&with_origin_country=${filter.countryCode}`;
+                
+                if (mediaType === 'anime') {
+                    // For Anime, always filter by Japan and Animation (16)
+                    queryParams += `&with_origin_country=JP`;
+                    
+                    if (filter.genreId && filter.genreId !== '16' && filter.genreId !== '') {
+                        // Add selected genre *in addition* to Animation
+                        queryParams += `&with_genres=16,${filter.genreId}`;
+                    } else {
+                        // Default to just Animation if 'All Genres' or 'Animation' is selected
+                        queryParams += `&with_genres=16`;
+                    }
+                } else {
+                    // Generic filter logic for Movie, TV, K-Drama
+                    if (filter.genreId) queryParams += `&with_genres=${filter.genreId}`;
+                    if (filter.countryCode) queryParams += `&with_origin_country=${filter.countryCode}`;
+                }
             }
 
             const container = document.getElementById(containerId);
@@ -1148,9 +1200,12 @@
                 if (mediaType === 'movie' || mediaType === 'tv') {
                     renderFilterButtons(mediaType, 'country');
                 }
-                if (mediaType !== 'anime') { // Anime genre is fixed
-                    renderFilterButtons(mediaType, 'genre');
-                }
+                // if (mediaType !== 'anime') { // Anime genre is fixed
+                //     renderFilterButtons(mediaType, 'genre');
+                // }
+                // Allow genre filter for Anime as well
+                renderFilterButtons(mediaType, 'genre');
+
                 renderSortButtons(mediaType);
                 fetchAndRender(mediaType, currentPage[mediaType]);
             } else if (mediaType === 'search') handleSearch(currentPage['search']);
@@ -1220,6 +1275,7 @@
             renderFilterButtons('tv', 'genre');
             renderFilterButtons('tv', 'country');
             renderFilterButtons('korean-tv', 'genre');
+            renderFilterButtons('anime', 'genre'); // Add this line
             renderSortButtons('movie');
             renderSortButtons('tv');
             renderSortButtons('korean-tv');
@@ -1263,7 +1319,6 @@
             <span id="current-year-copyright" class="block text-sm text-center text-[#9CA3AF] sm:text-center">© GoStream . All Rights Reserved.</span>
         
 </footer>
-
-
 </html>
+
 
